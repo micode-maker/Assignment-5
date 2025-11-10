@@ -1,6 +1,12 @@
 // Import packages, initialize an express app, and define the port you will use
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const app = express();
+const port = 3000;
 
+app.use(express.json());
 
+app.listen(port, () => console.log(`Server running on port ${port}`));
 
 // Data for the server
 const menuItems = [
@@ -61,3 +67,72 @@ const menuItems = [
 ];
 
 // Define routes and implement middleware here
+const validateMenuItem = [
+  body('name').isString().isLength({ min: 3 }).withMessage('Name must be at least 3 characters'),
+  body('description').isString().isLength({ min: 10 }).withMessage('Description must be at least 10 characters'),
+  body('price').isFloat({ gt: 0 }).withMessage('Price must be greater than 0'),
+  body('category').isIn(['appetizer', 'entree', 'dessert', 'beverage']).withMessage('Invalid category'),
+  body('ingredients').isArray({ min: 1 }).withMessage('Requires at least one ingredient'),
+  body('available').optional().isBoolean().withMessage('Must default to true or false'),
+];
+
+function handleValidationErrors(req, res, next) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array().map(e => ({ field: e.path, message: e.msg })) });
+  }
+  next();
+}
+
+app.get('/api/menu', (req, res) => {
+  res.status(200).json(menuItems);
+});
+
+app.get('/api/menu/:id', (req, res) => {
+  const item = menuItems.find(i => i.id === parseInt(req.params.id));
+  if (!item) return res.status(404).json({ error: 'Menu item not found' });
+  res.status(200).json(item);
+});
+
+app.post('/api/menu', validateMenuItem, handleValidationErrors, (req, res) => {
+  const newItem = {
+    id: menuItems.length + 1,
+    ...req.body,
+  };
+  menuItems.push(newItem);
+  res.status(201).json(newItem);
+});
+
+app.put('/api/menu/:id', validateMenuItem, handleValidationErrors, (req, res) => {
+  const id = parseInt(req.params.id);
+  const index = menuItems.findIndex(i => i.id === id);
+  if (index === -1) return res.status(404).json({ error: 'Menu item not found' });
+
+  menuItems[index] = { id, ...req.body };
+  res.status(200).json(menuItems[index]);
+});
+
+app.delete('/api/menu/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const index = menuItems.findIndex(i => i.id === id);
+  if (index === -1) return res.status(404).json({ error: 'Menu item not found' });
+
+  menuItems.splice(index, 1);
+  res.status(200).json({ message: 'Menu item deleted' });
+});
+
+// Request Logging Middleware
+const requestLogger = (req, res, next) => {
+  const logEntry = {
+    method: req.method,
+    url: req.originalUrl,
+    timestamp: new Date().toISOString(),
+  };
+  if (req.method === 'POST' || req.method === 'PUT') {
+    logEntry.body = req.body;
+  }
+  console.log('[Request body]', JSON.stringify(logEntry, null, 2));
+  next();
+};
+
+app.use(requestLogger);
